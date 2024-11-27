@@ -106,30 +106,25 @@
   <script>
 
 
-{% if bing_api_key != '' %}
-Cesium.BingMapsApi.defaultKey = "{{ bing_api_key }}";
-{% endif %}
-
 {% if cesium_api_key != '' %}
 Cesium.Ion.defaultAccessToken = "{{ cesium_api_key }}";
 {% endif %}
 
+var terrain = Cesium.Terrain.fromWorldTerrain({
+	 requestWaterMask: true,
+	 requestVertexNormals: true
+});
 var viewer = new Cesium.Viewer('cesiumContainer', {
     terrainProviderViewModels : [], //Disable terrain changing
     infoBox : false, //Disable InfoBox widget
     selectionIndicator : false, //Disable selection indicator
-	navigationInstructionsInitiallyVisible : false
+	navigationInstructionsInitiallyVisible : false,
+	terrain : terrain
 });
 var scene = viewer.scene;
 
 //Lighting based on sun/moon positions
 scene.globe.enableLighting = false; // generally a bit too dark when enabled
-
-//Terrain
-viewer.terrainProvider = Cesium.createWorldTerrain({
-    requestWaterMask: true,
-    requestVertexNormals: true
-});
 
 //Enable depth testing so things behind the terrain disappear.
 scene.globe.depthTestAgainstTerrain = true;
@@ -331,14 +326,16 @@ var entity = viewer.entities.add({
 
 // sample the ground height at takeoff position to get the offset (there can be
 // an offset of several meters)
-var promise = Cesium.sampleTerrainMostDetailed(viewer.terrainProvider, [ takeoff_position ]);
-Cesium.when(promise, function(updatedPositions) {
-	var ground_offset = takeoff_position.height - takeoff_altitude;
-    console.log('Ground Offset in meters: ' + ground_offset);
-	// re-compute the positions taking the ground offset into account.
-	// add 2 meters more to allow for inaccuracies
-	var positionProperty = computePositionProperty(ground_offset + 2);
-	entity.position = positionProperty;
+terrain.readyEvent.addEventListener(provider => {
+	var promise = Cesium.sampleTerrainMostDetailed(provider, [ takeoff_position ]);
+	promise.then((updatedPositions) => {
+		var ground_offset = takeoff_position.height - takeoff_altitude;
+		console.log('Ground Offset in meters: ' + ground_offset);
+		// re-compute the positions taking the ground offset into account.
+		// add 2 meters more to allow for inaccuracies
+		var positionProperty = computePositionProperty(ground_offset + 2);
+		entity.position = positionProperty;
+	});
 });
 
 
