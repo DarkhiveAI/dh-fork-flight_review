@@ -146,6 +146,7 @@ var start = Cesium.JulianDate.fromIso8601({{ start_timestamp }});
 var boot_timestamp = Cesium.JulianDate.fromIso8601({{ boot_timestamp }});
 var stop = Cesium.JulianDate.fromIso8601({{ end_timestamp }});
 var attitude_data = {{ attitude_data }};
+attitude_data[0][0] = {{ start_timestamp }}; // Prevent initial attitude jump if the first sample is a bit later
 
 var model_scale_factor = {{ model_scale_factor }}; // model-specific scale factor
 var model_uri = "{{ model_uri }}";
@@ -215,22 +216,24 @@ function computeOrientationProperty() {
     var rotation_matrix = new Cesium.Matrix3();
     Cesium.Matrix4.getRotation(transform_matrix, rotation_matrix);
 
-    // rotate by 90 deg to point towards north (instead of east)
-    var m = Cesium.Matrix3.fromRotationZ(Cesium.Math.toRadians(90.0));
-    rotation_matrix = Cesium.Matrix3.multiply(rotation_matrix, m, new Cesium.Matrix3());
     // rotation quaterion from ENU to ECEF
     var q_enu_to_ecef = Cesium.Quaternion.fromRotationMatrix(rotation_matrix);
 
-	
-    
+    var kHalfSqrt2 = 0.7071067811865476;
+    var q_ned_to_enu = new Cesium.Quaternion(kHalfSqrt2, kHalfSqrt2, 0.0, 0.0); // 180 deg along X, -90 deg along Z (intrinsic)
+    var q_ned_to_enu_inv = new Cesium.Quaternion();
+    Cesium.Quaternion.inverse(q_ned_to_enu, q_ned_to_enu_inv);
+    var tmp = new Cesium.Quaternion();
+
     for (i = 0; i < attitude_data.length; ++i) {
         var cur_attitude = attitude_data[i];
         var time_att = Cesium.JulianDate.fromIso8601(cur_attitude[0]);
-        // we need to swap the y & z axis: in NED the body-frame y-axis points to the right
-        // and the z axis down, whereas in ECEF the y-axis points to the left and the z-axis
-        // upwards (x-axis points forward in both coordinate systems)
-        var q = new Cesium.Quaternion(cur_attitude[1], -cur_attitude[2],
-                                               -cur_attitude[3], cur_attitude[4]);
+        var q = new Cesium.Quaternion(cur_attitude[1], cur_attitude[2], cur_attitude[3], cur_attitude[4]);
+
+        // Convert NED to ENU
+        Cesium.Quaternion.multiply(q_ned_to_enu, q, tmp);
+        Cesium.Quaternion.multiply(tmp, q_ned_to_enu_inv, q);
+
         var orientation = new Cesium.Quaternion();
         Cesium.Quaternion.multiply(q_enu_to_ecef, q, orientation);
         //orientationProperty.addSample(time_att, orientation); // this uses interpolation
