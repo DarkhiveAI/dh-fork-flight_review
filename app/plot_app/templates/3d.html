@@ -42,7 +42,7 @@
 		  padding-top: 2px;
 		  padding-bottom: 2px;
 	  }
-	  #toolbar td:not(.noalign) {
+	  #toolbar td {
 		  text-align: right;
 	  }
 	  #toolbar .header {
@@ -69,6 +69,27 @@
 		  margin-left: -320px;
 		  margin-top: -300px;
       }
+
+      .collapsible {
+          background-color: #777;
+          color: white;
+          cursor: pointer;
+          padding: 5px;
+          width: 100%;
+          border: none;
+          text-align: center;
+          outline: none;
+		  border-radius: 4px;
+      }
+      .active, .collapsible:hover {
+          background-color: #555;
+      }
+      .content {
+          padding: 0 18px;
+          max-height: 0;
+          overflow: hidden;
+          transition: max-height 0.2s ease-out;
+      }
   </style>
 </head>
 <body>
@@ -76,11 +97,10 @@
   <div id="radio-controller"></div>
 
   <div id="toolbar">
+	  <a href="plot_app?log={{ log_id }}">Open Plot Page</a>
+	  <button class="collapsible">Configure</button>
+	  <div class="content">
 	  <table><tbody>
-			  <tr>
-				  <td class="noalign" colspan="2"><a href="plot_app?log={{ log_id }}">Open Plot Page</a></td>
-			  </tr>
-			  <!-- <tr><td class="header">Options</td></tr> -->
 			  <tr>
 				  <td>Model Size</td>
 				  <td>
@@ -95,12 +115,32 @@
 				  </td>
 			  </tr>
 			  <tr>
+				  <td>Flight Path Width</td>
+				  <td>
+					  <input type="range" min="1" max="30" step="1" data-bind="value: path_width, valueUpdate: 'input'">
+					  <input type="text" size="2" data-bind="value: path_width">
+				  </td>
+			  </tr>
+			  <tr>
+				  <td>Flight Path Color</td>
+				  <td>
+					  <input type="color" value="#f6b73c" data-bind="value: path_color, valueUpdate: 'input'">
+				  </td>
+			  </tr>
+			  <tr>
+				  <td>Show Radio</td>
+				  <td>
+					  <input type="checkbox" value="true" data-bind="checked: radio_visible, valueUpdate: 'input'">
+				  </td>
+			  </tr>
+			  <tr>
 				  <td>Camera Tracks Vehicle</td>
 				  <td>
 					  <input type="checkbox" value="false" data-bind="checked: track_vehicle, valueUpdate: 'input'">
 				  </td>
 			  </tr>
 		  </tbody></table>
+	  </div>
   </div>
 
   <script>
@@ -431,6 +471,33 @@ viewer.clock.onTick.addEventListener(function(clock) {
 
 	 radio_controller.redraw();
 });
+// Mouse dragging
+var radio_controller_offset = [0, 0];
+var radio_controller_element = document.getElementById("radio-controller");
+var is_mouse_down = false;
+radio_controller_element.addEventListener('mousedown', function(e) {
+    is_mouse_down = true;
+    radio_controller_offset = [
+        radio_controller_element.offsetLeft - e.clientX,
+        radio_controller_element.offsetTop - e.clientY,
+    ];
+}, true);
+document.addEventListener('mouseup', function() {
+    is_mouse_down = false;
+}, true);
+document.addEventListener('mousemove', function(e) {
+    event.preventDefault();
+    if (is_mouse_down) {
+        var margin_left = parseInt(window.getComputedStyle(radio_controller_element).marginLeft);
+        var margin_top = parseInt(window.getComputedStyle(radio_controller_element).marginTop);
+        var x = (e.clientX + radio_controller_offset[0]);
+        var y = (e.clientY + radio_controller_offset[1]);
+        x = Math.max(0, Math.min(window.innerWidth - radio_controller_element.clientWidth, x));
+        y = Math.max(0, Math.min(window.innerHeight - radio_controller_element.clientHeight, y));
+        radio_controller_element.style.left = (x - margin_left) + 'px';
+        radio_controller_element.style.top  = (y - margin_top) + 'px';
+    }
+}, true);
 
 
 // additional keyboard handling
@@ -456,7 +523,10 @@ document.addEventListener('keyup', function(e) {
 // UI: configuration
 var viewModel = {
     size : default_model_scale,
+    path_width : 10,
+    path_color : '#FFFF00',
     path_visible : true,
+    radio_visible : true,
     track_vehicle : false,
 };
 // Convert the viewModel members into knockout observables.
@@ -471,9 +541,30 @@ Cesium.knockout.getObservable(viewModel, 'size').subscribe(
 		entity.model.scale = newValue * model_scale_factor;
     }
 );
+Cesium.knockout.getObservable(viewModel, 'path_width').subscribe(
+    function(newValue) {
+		entity.path.width = newValue;
+    }
+);
+Cesium.knockout.getObservable(viewModel, 'path_color').subscribe(
+    function(newValue) {
+        var color = new Cesium.Color();
+        Cesium.Color.fromCssColorString(newValue, color);
+        entity.path.material.color = color;
+    }
+);
 Cesium.knockout.getObservable(viewModel, 'path_visible').subscribe(
     function(newValue) {
 		entity.path.show = newValue;
+    }
+);
+Cesium.knockout.getObservable(viewModel, 'radio_visible').subscribe(
+    function(newValue) {
+		if (newValue) {
+			document.getElementById('radio-controller').style.display = 'block';
+		} else {
+			document.getElementById('radio-controller').style.display = 'none';
+		}
     }
 );
 Cesium.knockout.getObservable(viewModel, 'track_vehicle').subscribe(
@@ -491,6 +582,19 @@ Cesium.knockout.getObservable(viewModel, 'track_vehicle').subscribe(
 viewer.zoomTo(entity, new Cesium.HeadingPitchRange(0,
 	Cesium.Math.toRadians(-90), 200));
 
+
+var coll = document.getElementsByClassName("collapsible");
+for (var i = 0; i < coll.length; i++) {
+  coll[i].addEventListener("click", function() {
+    this.classList.toggle("active");
+    var content = this.nextElementSibling;
+    if (content.style.maxHeight){
+      content.style.maxHeight = null;
+    } else {
+      content.style.maxHeight = content.scrollHeight + "px";
+    }
+  });
+}
   </script>
 </body>
 </html>
