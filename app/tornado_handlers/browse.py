@@ -204,18 +204,10 @@ class BrowseDataRetrievalHandler(tornado.web.RequestHandler):
             """ return true if the string looks like a tag """
             if not q or q[0] not in ('v', 'V'):
                 return False
-            # We want to allow *prefixes* of a valid tag, so test incrementally
-            # Example: "v1.16.0-rc" should be considered tagish even if not complete
-            # Strategy: ensure all chars are allowed and it starts like a tag
-            allowed = set("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.-+")
-            if any(c not in allowed for c in q[1:]):
-                return False
-            # If user provided a full tag, this matches; if it is a prefix, it should still look like a tag start
-            if bool(_TAG_PREFIX_RE.match(q)):
-                return True
+            return bool(_TAG_PREFIX_RE.match(q))
 
         def _flatten_strings(maybe_list):
-            """ flatten a list of strings or a single string into a single string """
+            """ flatten a list of strings or a single string into a single string list """
             if not maybe_list:
                 return []
             if isinstance(maybe_list, (list, tuple)):
@@ -246,31 +238,31 @@ class BrowseDataRetrievalHandler(tornado.web.RequestHandler):
             filtered_counter = len(db_tuples)
         else:
             counter = 1
-            q = search_str
-            hash_mode = is_hashish(q)
-            tag_mode = is_tagish(q)
+            hash_mode = is_hashish(search_str)
+            tag_mode = is_tagish(search_str)
 
             for db_tuple in db_tuples:
                 counter += 1
 
                 columns = get_columns_from_tuple(db_tuple, counter, all_overview_imgs)
-                visible = _flatten_strings(getattr(columns, 'columns', []))
-                hidden = _flatten_strings(getattr(columns, 'search_only_columns', []))
 
                 if columns is None:
                     continue
 
+                visible = _flatten_strings(columns.columns)
+                hidden = _flatten_strings(columns.search_only_columns)
+
                 prefix_hit = False
                 if tag_mode or hash_mode:
                     for col in hidden:
-                        if col.lower().startswith(q):
+                        if col.lower().startswith(search_str):
                             prefix_hit = True
                             break
 
                 substring_hit = False
                 if not prefix_hit:
                     haystack = [s.lower() for s in (visible + hidden)]
-                    substring_hit = any(q in s for s in haystack)
+                    substring_hit = any(search_str in s for s in haystack)
 
                 if prefix_hit or substring_hit:
                     if data_start <= filtered_counter < data_start + data_length:
