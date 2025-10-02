@@ -15,7 +15,7 @@ import tornado.web
 sys.path.append(os.path.join(os.path.dirname(os.path.realpath(__file__)), '../plot_app'))
 from config import get_db_filename, get_overview_img_filepath
 from db_entry import DBData, DBDataGenerated
-from helper import flight_modes_table, get_airframe_data, html_long_word_force_break
+from helper import flight_modes_table, get_airframe_data
 
 #pylint: disable=relative-beyond-top-level,too-many-statements
 from .common import get_jinja_env, get_generated_db_data_from_log
@@ -29,6 +29,19 @@ _TAG_PREFIX_RE = re.compile(
      """,
     re.IGNORECASE | re.VERBOSE,
 )
+
+def format_duration(seconds: int) -> str:
+    """ Format duration in seconds to HhMmSs string """
+    try:
+        seconds = int(seconds)
+    except Exception:
+        return ""
+    h, rem = divmod(seconds, 3600)
+    m, s = divmod(rem, 60)
+
+    if h: return f"{h}h{m}m{s}s"
+    if m: return f"{m}m{s}s"
+    return f"{s}s"
 
 #pylint: disable=abstract-method
 class BrowseDataRetrievalHandler(tornado.web.RequestHandler):
@@ -143,9 +156,7 @@ class BrowseDataRetrievalHandler(tornado.web.RequestHandler):
                                       for x in db_data.flight_modes if x in
                                       flight_modes_table])
 
-            m, s = divmod(db_data.duration_s, 60)
-            h, m = divmod(m, 60)
-            duration_str = '{:d}:{:02d}:{:02d}'.format(h, m, s)
+            duration_str = format_duration(db_data.duration_s)
 
             start_time_str = 'N/A'
             if db_data.start_time_utc != 0:
@@ -158,7 +169,8 @@ class BrowseDataRetrievalHandler(tornado.web.RequestHandler):
 
             # make sure to break long descriptions w/o spaces (otherwise they
             # mess up the layout)
-            description = html_long_word_force_break(db_data.description)
+            # disabled description on browse page on 2025-09-26
+            # description = html_long_word_force_break(db_data.description)
 
             search_only_columns = []
 
@@ -171,25 +183,36 @@ class BrowseDataRetrievalHandler(tornado.web.RequestHandler):
             if db_data.vehicle_uuid is not None:
                 search_only_columns.append(db_data.vehicle_uuid)
 
-            image_col = '<div class="no_map_overview"> Not rendered / No GPS </div>'
-            overview_image_filename = log_id+'.png'
+            rounded_div_class = "h-100 w-100 bg-body-secondary rounded overflow-hidden"
+            image_col_class = "object-fit-cover d-block"
+            overview_image_filename = f"{log_id}.png"
             if overview_image_filename in all_overview_imgs:
-                image_col = '<img class="map_overview" src="/overview_img/'
-                image_col += log_id+'.png" alt="Overview Image Load Failed" height=50/>'
+                image_col = f"""
+                    <div class="">
+                        <img class="map_overview {image_col_class}"
+                            src="/overview_img/{overview_image_filename}"
+                            loading="lazy" decoding="async" />
+                    </div>
+                """
+            else:
+                image_col = f"""
+                    <div class="{rounded_div_class}" style="width:60px;">
+                        <div class="no_map_overview text-warning">
+                            No Image Preview
+                        </div>
+                    </div>
+                """
 
             return Columns([
                 counter,
-                '<a href="plot_app?log='+log_id+'">'+log_date+'</a>',
+                f'<a href="plot_app?log={log_id}">{log_date}</a>',
                 image_col,
-                description,
                 db_data.mav_type,
                 airframe,
                 db_data.sys_hw,
                 ver_sw,
                 duration_str,
                 start_time_str,
-                db_data.rating_str(),
-                db_data.num_logged_errors,
                 flight_modes
             ], search_only_columns)
 
